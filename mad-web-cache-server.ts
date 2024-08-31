@@ -11,6 +11,12 @@ Basic caching/archiving proxy server as single deno script.
  * Tries to remap links using basic search n replace (in all text files)
  * Querystrings for urls ending with .php, .asp, /css, /css2 are hashed and included in local cache filenames to enable multiple cached results
 
+Todo:
+ * Verify that redirect works as expected
+ * Add option/command line argument to set port 
+ * Add option/command line argument to cache all querystrings regardless of url ext/postfix
+ * Add option/command line argument to save querystring urls (same filename as content, but some special postfix/ext) 
+
 */
 
 import { serveFile } from "jsr:@std/http/file-server";
@@ -37,7 +43,8 @@ async function cacheResponse(response: Response, localPath: string): Promise<Res
 
 function urlMaybeScript(url: string): boolean {
   const scriptExts = ['.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl', '.py', '.rb', '.lua', '.shtml', '.ejs', '.php5', '.twig', '.phtml', 
-                      '/css', '/css2', ];
+                      '/css', '/css2',
+                      '/search'  ];
   for (const ext of scriptExts) {
       if (url.endsWith(ext)) {
       return true;
@@ -142,9 +149,7 @@ Deno.serve(async (req: Request) => {
   const noRemoteCalls = Deno.args.indexOf("--blockremote") != -1;
   const globalRemap = !(Deno.args.indexOf("--skipglobalremap") != -1);
   const mirrorFolderName = 'mad-web-cache';
-
                                                                                 if(verboseLog) console.log("---- SERVE: " + req.url + "   ref: " + req.headers.get('Referer'));
-
   const reqUrl = new URL(req.url);
   const pathname = stripQuerystringAndHash(reqUrl).pathname;
   const usesMirrorFolderName = pathname.startsWith('/' + mirrorFolderName + '/')
