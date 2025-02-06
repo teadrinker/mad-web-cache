@@ -1,29 +1,44 @@
 
-// mad-web-cache
+// mad-web-cache - https://github.com/teadrinker/mad-web-cache
 // teadrinker / Martin Eklund, 2024
 // GPL-3.0 license
 
 /*
-
-Basic caching/archiving proxy server as single deno script.
- * Tries to store all files locally requested as you browse.
- * Access the web through `localhost/mad-web-cache/`  instead of `https://`
- * Tries to remap links using basic search n replace (in all text files)
- * Querystrings for urls ending with .php, .asp, /css, /css2 are hashed and included in local cache filenames to enable multiple cached results
-
 Todo:
  * Verify that redirect works as expected
  * Add option/command line argument to set port 
  * Add option/command line argument to cache all querystrings regardless of url ext/postfix
  * Add option/command line argument to save querystring urls (same filename as content, but some special postfix/ext) 
-
 */
 
 import { serveFile } from "jsr:@std/http/file-server";
+
+const customTextReplace = [
+  ["Hosted using <a href=\"http://wordpress.org/\">WordPress</a>", "Archived using <a href = \"https://github.com/teadrinker/mad-web-cache\">mad-web-cache</a>"],
+];
+
+const port = 8000;
+const convertDirsToHtml = true; // if /index.php or /index.shtml is found, it will cache as /index.html
+const verboseLog = Deno.args.indexOf("--verbose") != -1;
+const noRemoteCalls = Deno.args.indexOf("--blockremote") != -1;
+const globalRemap = !(Deno.args.indexOf("--skipglobalremap") != -1);
+const mirrorFolderName = 'mad-web-cache';
+const scriptExts = ['.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl', '.py', '.rb', '.lua', '.shtml', '.ejs', '.php5', '.twig', '.phtml', 
+                      '/css', '/css2',
+                      '/search', '/js'  ];
+
+
+
+console.log("\nAccess the web through  -->    http://localhost:"+port+"/mad-web-cache/\n");
+console.log("\n             like this: -->    http://localhost:"+port+"/mad-web-cache/www.wikipedia.org/\n");
+
+console.log("\nBeware of browser caching! Clear cache or switch port to avoid issues!\n");
+
+
+// const convertOutputToHtml = true; // converts scriptExts (.php .asp etc) to html NOT YET IMPLEMENTED
+
 //import { createHash } from "https://deno.land/std@0.179.0/crypto/mod.ts"; // could not get built-in md5 to work...
-
 function md5(d : string) {var r = M(V(Y(X(d),8*d.length)));return r.toLowerCase()};function M(d){for(var _,m="0123456789ABCDEF",f="",r=0;r<d.length;r++)_=d.charCodeAt(r),f+=m.charAt(_>>>4&15)+m.charAt(15&_);return f}function X(d){for(var _=Array(d.length>>2),m=0;m<_.length;m++)_[m]=0;for(m=0;m<8*d.length;m+=8)_[m>>5]|=(255&d.charCodeAt(m/8))<<m%32;return _}function V(d){for(var _="",m=0;m<32*d.length;m+=8)_+=String.fromCharCode(d[m>>5]>>>m%32&255);return _}function Y(d,_){d[_>>5]|=128<<_%32,d[14+(_+64>>>9<<4)]=_;for(var m=1732584193,f=-271733879,r=-1732584194,i=271733878,n=0;n<d.length;n+=16){var h=m,t=f,g=r,e=i;f=md5_ii(f=md5_ii(f=md5_ii(f=md5_ii(f=md5_hh(f=md5_hh(f=md5_hh(f=md5_hh(f=md5_gg(f=md5_gg(f=md5_gg(f=md5_gg(f=md5_ff(f=md5_ff(f=md5_ff(f=md5_ff(f,r=md5_ff(r,i=md5_ff(i,m=md5_ff(m,f,r,i,d[n+0],7,-680876936),f,r,d[n+1],12,-389564586),m,f,d[n+2],17,606105819),i,m,d[n+3],22,-1044525330),r=md5_ff(r,i=md5_ff(i,m=md5_ff(m,f,r,i,d[n+4],7,-176418897),f,r,d[n+5],12,1200080426),m,f,d[n+6],17,-1473231341),i,m,d[n+7],22,-45705983),r=md5_ff(r,i=md5_ff(i,m=md5_ff(m,f,r,i,d[n+8],7,1770035416),f,r,d[n+9],12,-1958414417),m,f,d[n+10],17,-42063),i,m,d[n+11],22,-1990404162),r=md5_ff(r,i=md5_ff(i,m=md5_ff(m,f,r,i,d[n+12],7,1804603682),f,r,d[n+13],12,-40341101),m,f,d[n+14],17,-1502002290),i,m,d[n+15],22,1236535329),r=md5_gg(r,i=md5_gg(i,m=md5_gg(m,f,r,i,d[n+1],5,-165796510),f,r,d[n+6],9,-1069501632),m,f,d[n+11],14,643717713),i,m,d[n+0],20,-373897302),r=md5_gg(r,i=md5_gg(i,m=md5_gg(m,f,r,i,d[n+5],5,-701558691),f,r,d[n+10],9,38016083),m,f,d[n+15],14,-660478335),i,m,d[n+4],20,-405537848),r=md5_gg(r,i=md5_gg(i,m=md5_gg(m,f,r,i,d[n+9],5,568446438),f,r,d[n+14],9,-1019803690),m,f,d[n+3],14,-187363961),i,m,d[n+8],20,1163531501),r=md5_gg(r,i=md5_gg(i,m=md5_gg(m,f,r,i,d[n+13],5,-1444681467),f,r,d[n+2],9,-51403784),m,f,d[n+7],14,1735328473),i,m,d[n+12],20,-1926607734),r=md5_hh(r,i=md5_hh(i,m=md5_hh(m,f,r,i,d[n+5],4,-378558),f,r,d[n+8],11,-2022574463),m,f,d[n+11],16,1839030562),i,m,d[n+14],23,-35309556),r=md5_hh(r,i=md5_hh(i,m=md5_hh(m,f,r,i,d[n+1],4,-1530992060),f,r,d[n+4],11,1272893353),m,f,d[n+7],16,-155497632),i,m,d[n+10],23,-1094730640),r=md5_hh(r,i=md5_hh(i,m=md5_hh(m,f,r,i,d[n+13],4,681279174),f,r,d[n+0],11,-358537222),m,f,d[n+3],16,-722521979),i,m,d[n+6],23,76029189),r=md5_hh(r,i=md5_hh(i,m=md5_hh(m,f,r,i,d[n+9],4,-640364487),f,r,d[n+12],11,-421815835),m,f,d[n+15],16,530742520),i,m,d[n+2],23,-995338651),r=md5_ii(r,i=md5_ii(i,m=md5_ii(m,f,r,i,d[n+0],6,-198630844),f,r,d[n+7],10,1126891415),m,f,d[n+14],15,-1416354905),i,m,d[n+5],21,-57434055),r=md5_ii(r,i=md5_ii(i,m=md5_ii(m,f,r,i,d[n+12],6,1700485571),f,r,d[n+3],10,-1894986606),m,f,d[n+10],15,-1051523),i,m,d[n+1],21,-2054922799),r=md5_ii(r,i=md5_ii(i,m=md5_ii(m,f,r,i,d[n+8],6,1873313359),f,r,d[n+15],10,-30611744),m,f,d[n+6],15,-1560198380),i,m,d[n+13],21,1309151649),r=md5_ii(r,i=md5_ii(i,m=md5_ii(m,f,r,i,d[n+4],6,-145523070),f,r,d[n+11],10,-1120210379),m,f,d[n+2],15,718787259),i,m,d[n+9],21,-343485551),m=safe_add(m,h),f=safe_add(f,t),r=safe_add(r,g),i=safe_add(i,e)}return Array(m,f,r,i)}function md5_cmn(d,_,m,f,r,i){return safe_add(bit_rol(safe_add(safe_add(_,d),safe_add(f,i)),r),m)}function md5_ff(d,_,m,f,r,i,n){return md5_cmn(_&m|~_&f,d,_,r,i,n)}function md5_gg(d,_,m,f,r,i,n){return md5_cmn(_&f|m&~f,d,_,r,i,n)}function md5_hh(d,_,m,f,r,i,n){return md5_cmn(_^m^f,d,_,r,i,n)}function md5_ii(d,_,m,f,r,i,n){return md5_cmn(m^(_|~f),d,_,r,i,n)}function safe_add(d,_){var m=(65535&d)+(65535&_);return(d>>16)+(_>>16)+(m>>16)<<16|65535&m}function bit_rol(d,_){return d<<_|d>>>32-_}
-
 
 async function cacheResponse(response: Response, localPath: string): Promise<Response> {
 
@@ -42,9 +57,6 @@ async function cacheResponse(response: Response, localPath: string): Promise<Res
   }
 
 function urlMaybeScript(url: string): boolean {
-  const scriptExts = ['.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl', '.py', '.rb', '.lua', '.shtml', '.ejs', '.php5', '.twig', '.phtml', 
-                      '/css', '/css2',
-                      '/search'  ];
   for (const ext of scriptExts) {
       if (url.endsWith(ext)) {
       return true;
@@ -141,14 +153,14 @@ function hashIfNotEmpty(text: string): string {
   //return queryStringHashSeparator + hash.toString();
 }
 
+async function serveFileForceTextHtml(req: Request, fullLocalPath: string) {
+    const headers = new Headers();
+    headers.set("Content-Type", "text/html");
+    const file = await Deno.readFile(fullLocalPath);
+    return new Response(file, { status: 200, headers, });
+}
 
-
-Deno.serve(async (req: Request) => {
-
-  const verboseLog = Deno.args.indexOf("--verbose") != -1;
-  const noRemoteCalls = Deno.args.indexOf("--blockremote") != -1;
-  const globalRemap = !(Deno.args.indexOf("--skipglobalremap") != -1);
-  const mirrorFolderName = 'mad-web-cache';
+Deno.serve({port}, async (req: Request) => {
                                                                                 if(verboseLog) console.log("---- SERVE: " + req.url + "   ref: " + req.headers.get('Referer'));
   const reqUrl = new URL(req.url);
   const pathname = stripQuerystringAndHash(reqUrl).pathname;
@@ -228,6 +240,7 @@ Deno.serve(async (req: Request) => {
         let baseUrl = ''
         if(redir == remoteURL + '/') {
           baseUrl = reqUrl.origin + '/' + localPath + '/'
+                                                                                  if(verboseLog) console.log(`---- mkdir ${localPath + hashIfNotEmpty(queryString)}`);
           await Deno.mkdir(localPath + hashIfNotEmpty(queryString)); // cache as dir
                                                                                   if(verboseLog) console.log(`---- redirect to ${baseUrl} (adding slash at the end)`);
         }
@@ -256,8 +269,10 @@ Deno.serve(async (req: Request) => {
         for (const part of addURLParts) {
             let fullLocalPath = localPath + hashIfNotEmpty(queryString) + part;
             if(await fileExists(fullLocalPath)) {
+                                                                                  if(verboseLog) console.log(`-    serve cached file: ${fullLocalPath}`);
                 // console.log(`serve cached file : ${fullLocalPath}`);
-                return await serveFile(req, fullLocalPath);
+                //return await serveFile(req, fullLocalPath, { headers: new Headers({ "Content-Type": "text/html" }) });
+                return await serveFileForceTextHtml(req, fullLocalPath);
             }
         }
     } catch (error) {
@@ -279,11 +294,23 @@ Deno.serve(async (req: Request) => {
                 continue;
             }
 
+            if(response.status != 200) { //204 No Content, 304 Not Modified
+              console.warn("status "+response.status+"("+response.statusText+") not handled correctly, forcing 200 : " + fullRemotePath);
+              response = new Response(await response.text(), {
+                status: 200,
+                statusText: response.statusText,
+                headers: response.headers,
+              });
+            }
+        
             if(isTextContent(response)) {
               const relativePath = "../".repeat(splitPath.length < 3 ? 0 : splitPath.length - 3);
               const domainName = replaceAll(splitPath[1],'www.', '');
                                                                                   if(verboseLog) console.log(`---- caching file: ${fullRemotePath} (remap URLs to relative/local URLs)`);
               let text = await response.text();
+              customTextReplace.forEach(element => {
+                text = replaceAll(text, element[0], element[1]);
+              });
               text = replaceAll(text, 'https://www.'+domainName+ '/', relativePath);
               text = replaceAll(text, 'https://www.'+domainName     , relativePath);
               text = replaceAll(text, 'https://'    +domainName+ '/', relativePath);
@@ -300,7 +327,7 @@ Deno.serve(async (req: Request) => {
                 text = replaceAll(text, 'https://' , relativePath + '../');
                 text = replaceAll(text, 'http://'  , relativePath + '../');
               }
-          
+
               response = new Response(text, {
                   status: response.status,
                   statusText: response.statusText,
@@ -311,8 +338,16 @@ Deno.serve(async (req: Request) => {
             {
                                                                                   if(verboseLog) console.log(`---- caching file: ${fullRemotePath}`);
             }
-
-            return await cacheResponse(response, localPath + hashIfNotEmpty(queryString) + part);
+            
+            var cachePart = convertDirsToHtml && (part =="index.php" || part == "index.shtml") ? 'index.html' : part;
+            var cachePath = localPath + hashIfNotEmpty(queryString) + cachePart;
+            //if(convertOutputToHtml && urlMaybeScript(cachePath))
+            //{
+                // hmm, it's not as easy as replacing the extension here!
+                // it would also require search'n replace of text-content for everything in scriptExts 
+                // which would risk messing stuff up 
+            //}
+            return await cacheResponse(response,  cachePath);
         }
         console.error("All fetches failed: "+remoteURL);
     } catch (error) {
