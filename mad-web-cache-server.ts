@@ -22,6 +22,8 @@ const convertDirsToHtml = true; // if /index.php or /index.shtml is found, it wi
 const verboseLog = Deno.args.indexOf("--verbose") != -1;
 const noRemoteCalls = Deno.args.indexOf("--blockremote") != -1;
 const globalRemap = !(Deno.args.indexOf("--skipglobalremap") != -1);
+const ownLinksToOwnDomainRemap = true;
+const domainRootLinkRemap = true;
 const mirrorFolderName = 'mad-web-cache';
 const scriptExts = ['.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl', '.py', '.rb', '.lua', '.shtml', '.ejs', '.php5', '.twig', '.phtml', 
                       '/css', '/css2',
@@ -30,7 +32,7 @@ const scriptExts = ['.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl', '.py', '.rb'
 
 
 console.log("\nAccess the web through  -->    http://localhost:"+port+"/mad-web-cache/\n");
-console.log("\n             like this: -->    http://localhost:"+port+"/mad-web-cache/www.wikipedia.org/\n");
+console.log("\n             like this: -->    http://localhost:"+port+"/mad-web-cache/www.mozilla.org/\n");
 
 console.log("\nBeware of browser caching! Clear cache or switch port to avoid issues!\n");
 
@@ -271,8 +273,10 @@ Deno.serve({port}, async (req: Request) => {
             if(await fileExists(fullLocalPath)) {
                                                                                   if(verboseLog) console.log(`-    serve cached file: ${fullLocalPath}`);
                 // console.log(`serve cached file : ${fullLocalPath}`);
-                //return await serveFile(req, fullLocalPath, { headers: new Headers({ "Content-Type": "text/html" }) });
-                return await serveFileForceTextHtml(req, fullLocalPath);
+                if(part == 'index.php' || part == 'index.shtml')
+                  return await serveFileForceTextHtml(req, fullLocalPath);
+                else
+                  return await serveFile(req, fullLocalPath);
             }
         }
     } catch (error) {
@@ -311,21 +315,39 @@ Deno.serve({port}, async (req: Request) => {
               customTextReplace.forEach(element => {
                 text = replaceAll(text, element[0], element[1]);
               });
-              text = replaceAll(text, 'https://www.'+domainName+ '/', relativePath);
-              text = replaceAll(text, 'https://www.'+domainName     , relativePath);
-              text = replaceAll(text, 'https://'    +domainName+ '/', relativePath);
-              text = replaceAll(text, 'https://'    +domainName     , relativePath);
-              text = replaceAll(text, 'http://www.' +domainName+ '/', relativePath);
-              text = replaceAll(text, 'http://www.' +domainName     , relativePath);
-              text = replaceAll(text, 'http://'     +domainName+ '/', relativePath);
-              text = replaceAll(text, 'http://'     +domainName     , relativePath);
-              // text = text.replace(new RegExp(`https://[^.]+\\.${mydomain}`, 'g'), relativePath);
-              // text = text.replace(new RegExp(`http://[^.]+\\.${mydomain}`, 'g'), relativePath);
+
+              if(ownLinksToOwnDomainRemap)
+              {
+                // if content has absolute links to its own domain, convert them to relative
+                text = replaceAll(text, 'https://www.'+domainName+ '/', relativePath);
+                text = replaceAll(text, 'https://www.'+domainName     , relativePath);
+                text = replaceAll(text, 'https://'    +domainName+ '/', relativePath);
+                text = replaceAll(text, 'https://'    +domainName     , relativePath);
+                text = replaceAll(text, 'http://www.' +domainName+ '/', relativePath);
+                text = replaceAll(text, 'http://www.' +domainName     , relativePath);
+                text = replaceAll(text, 'http://'     +domainName+ '/', relativePath);
+                text = replaceAll(text, 'http://'     +domainName     , relativePath);                
+              }
               
               if(globalRemap) {
-                // re-link global urls to local as well
+                // re-link cross-domain urls to relative (will then try to cache that data as well)
                 text = replaceAll(text, 'https://' , relativePath + '../');
                 text = replaceAll(text, 'http://'  , relativePath + '../');
+                text = replaceAll(text, '"//'  , '"' + relativePath + '../'); // replacing just '//' would mess upp too much
+                text = replaceAll(text, "'//"  , "'" + relativePath + '../'); // replacing just '//' would mess upp too much
+              }
+
+              if(domainRootLinkRemap)
+              {   
+                // try to re-link domain-root links (URLs starting with a slash)
+                // this is hard to achieve without messing up things... 
+                // checks for '="/' and ' "/' followed by a alphanumeric or dash or underscore
+                text = text.replace(/='\/(?=[a-zA-Z0-9-_])/g, "='" + relativePath)
+                text = text.replace(/ '\/(?=[a-zA-Z0-9-_])/g, " '" + relativePath)
+                text = text.replace(/="\/(?=[a-zA-Z0-9-_])/g, '="' + relativePath)
+                text = text.replace(/ "\/(?=[a-zA-Z0-9-_])/g, ' "' + relativePath)
+                //text = replaceAll(text, '"/'  , '"' + relativePath); // this destroys any script that reference "/" also likely to mess up regexp expressions
+                //text = replaceAll(text, "'/"  , "'" + relativePath); // this destroys any script that reference '/' also likely to mess up regexp expressions
               }
 
               response = new Response(text, {
@@ -339,7 +361,8 @@ Deno.serve({port}, async (req: Request) => {
                                                                                   if(verboseLog) console.log(`---- caching file: ${fullRemotePath}`);
             }
             
-            var cachePart = convertDirsToHtml && (part =="index.php" || part == "index.shtml") ? 'index.html' : part;
+            var cachePart = (likelyDir && part == '') ||  // if likely dir, but none of the default files were found
+                            convertDirsToHtml && (part =="index.php" || part == "index.shtml") ? 'index.html' : part;
             var cachePath = localPath + hashIfNotEmpty(queryString) + cachePart;
             //if(convertOutputToHtml && urlMaybeScript(cachePath))
             //{
